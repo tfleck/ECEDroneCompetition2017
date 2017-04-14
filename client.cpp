@@ -37,6 +37,7 @@ struct processedImage {
 };
 
 //Define vision system functions
+Mat captureImage();
 processedImage processImage(Mat);
 bool processData(int, int, int, int);
 Mat processSection(Mat m);
@@ -87,7 +88,7 @@ static void Display_Main_Menu(void)
     printf("| [4]  Takeoff                  | [10] Test Rectangle Path         |\n");
     printf("| [5]  Landing                  | [11] Test Circle Path            |\n");
     printf("| [6]  Go Home                  | [12] Test Picamera               |\n");
-    printf("| [13]                          | [99] Exit Program                | \n");
+    printf("| [13] Test goTo                | [99] Exit Program                | \n");
     printf("+-----------------------------------------------------------------+\n");
     printf("input 1/2/3 etc..then press enter key\r\n");
     printf("use `rostopic echo` to query drone status\r\n");
@@ -310,7 +311,13 @@ int main(int argc, char *argv[])
                 break;
             case 11: {
                 /*draw circle sample*/
+                drone->request_sdk_permission_control();
+                sleep(1);
+                drone->takeoff();
+                sleep(8);
+                yaw = 0;
                 std::cout << "Enter the radius of the circle in meteres (10m > x > 4m)\n";
+                int circleRad = 0;
                 std::cin >> circleRad;
                 flyCircle(drone, circleRad);
             }
@@ -334,9 +341,25 @@ int main(int argc, char *argv[])
                 cout << "end test" << endl;
             }
                 break;
-            case 13:
-                /*stop video*/
-                drone->stop_video();
+            case 13: {
+                drone->request_sdk_permission_control();
+                sleep(1);
+                drone->takeoff();
+                sleep(8);
+                yaw = 0;
+                float x = drone->local_position.x;
+                float y = drone->local_position.y;
+                int newX = 0;
+                int newY = 0;
+                cout << "x coord:" << endl;
+                std::cin >> newX;
+                cout << "y coord:" << endl;
+                std::cin >> newY;
+                newX = newX+x;
+                newY = newY+y;
+                goTo(drone,newX,newY);
+            }
+
                 break;
 
             case 99:
@@ -432,7 +455,7 @@ void DrawCircleDemoMobileCallback(DJIDrone *drone)
             x =  x_center + circleRadiusIncrements;
             y =  y_center;
             circleRadiusIncrements = circleRadiusIncrements + 0.01;
-            drone->local_position_control(x ,y ,circleHeight, 0);
+            drone->local_position_control(y,x ,circleHeight, 0);
             usleep(20000);
         }
         else
@@ -448,7 +471,7 @@ void DrawCircleDemoMobileCallback(DJIDrone *drone)
         x =  x_center + circleRadius*cos((Phi/300));
         y =  y_center + circleRadius*sin((Phi/300));
         Phi = Phi+1;
-        drone->local_position_control(x ,y ,circleHeight, 0);
+        drone->local_position_control(y,x ,circleHeight, 0);
         usleep(20000);
     }
 
@@ -717,11 +740,12 @@ void StopCollisionAvoidanceCallback(DJIDrone *drone)
 
 //Reads in next from from camera and returns it
 Mat captureImage(){
+    cout << "capture img" <<endl;
     Mat img;
     //Define video stream
     VideoCapture cap(0);
-    cap.set(CAP_PROP_FRAME_WIDTH, maxX);
-    cap.set(CAP_PROP_FRAME_HEIGHT, maxY);
+    cap.set(CAP_PROP_FRAME_WIDTH, 640);
+    cap.set(CAP_PROP_FRAME_HEIGHT, 480);
     cap.set(CAP_PROP_FPS, 40);
     bool bSuccess = cap.read(img); // read a new frame from video
     return img;
@@ -729,6 +753,7 @@ Mat captureImage(){
 
 //Processes image passed for the landing pad using hsv range passed
 processedImage processImage(Mat imgOriginal) {
+    cout << "process img" <<endl;
     Mat imgHSV;
     //predefine HSV color range
     int iLowH = 7;
@@ -787,6 +812,7 @@ Mat processSection(Mat m) {
 
 //Fly a rectangular path
 void flyRectangle(DJIDrone *drone, int length, int width){
+    cout << "fly rectangle" <<endl;
     yaw = 0;
     float x = drone->local_position.x;
     float y = drone->local_position.y;
@@ -807,11 +833,11 @@ void flyRectangle(DJIDrone *drone, int length, int width){
         else{
             x = x-0.05;
         }
-        drone->local_position_control(x,y ,6.4, yaw);
+        drone->local_position_control(y,x ,6.4, yaw);
         usleep(20000);
     }
-    float x = drone->local_position.x;
-    float y = drone->local_position.y;
+    x = drone->local_position.x;
+    y = drone->local_position.y;
     posY = y-width;
     while(cvRound(y)!= cvRound(posY) && !targetfound)
     {
@@ -821,11 +847,11 @@ void flyRectangle(DJIDrone *drone, int length, int width){
         else{
             y = y-0.05;
         }
-        drone->local_position_control(x,y ,6.4, yaw);
+        drone->local_position_control(y,x ,6.4, yaw);
         usleep(20000);
     }
-    float x = drone->local_position.x;
-    float y = drone->local_position.y;
+    x = drone->local_position.x;
+    y = drone->local_position.y;
     if(length <= 0){
         posX = x+length;
     }
@@ -840,11 +866,11 @@ void flyRectangle(DJIDrone *drone, int length, int width){
         else{
             x = x-0.05;
         }
-        drone->local_position_control(x,y ,6.4, yaw);
+        drone->local_position_control(y,x ,6.4, yaw);
         usleep(20000);
     }
-    float x = drone->local_position.x;
-    float y = drone->local_position.y;
+    x = drone->local_position.x;
+    y = drone->local_position.y;
     posY = y+width;
     while(cvRound(y)!= cvRound(posY) && !targetfound)
     {
@@ -854,7 +880,7 @@ void flyRectangle(DJIDrone *drone, int length, int width){
         else{
             y = y-0.05;
         }
-        drone->local_position_control(x,y ,6.4, yaw);
+        drone->local_position_control(y,x ,6.4, yaw);
         usleep(20000);
     }
     finishedFly = true;
@@ -862,6 +888,7 @@ void flyRectangle(DJIDrone *drone, int length, int width){
 
 //Fly horizontally if true, right, false is left
 void flySideways(DJIDrone *drone,int distance, bool direction){
+    cout << "fly sideways" <<endl;
     yaw = 0;
     float x = drone->local_position.x;
     float y = drone->local_position.y;
@@ -888,7 +915,7 @@ void flySideways(DJIDrone *drone,int distance, bool direction){
         else if(cvRound(y) > cvRound(posY)){
             y = y-0.05;
         }
-        drone->local_position_control(x,y ,6.4, yaw);
+        drone->local_position_control(y,x ,6.4, yaw);
         usleep(20000);
     }
     finishedFly = true;
@@ -896,34 +923,36 @@ void flySideways(DJIDrone *drone,int distance, bool direction){
 
 //Fly a circle of a given radius
 void flyCircle(DJIDrone *drone, int circleRadius){
-    static float R = 2;
-    static float V = 2;
-    static float x;
-    static float y;
-    Phi = 0.000001;
+    cout << "fly circle" <<endl;
+    float R = 2;
+    float V = 2;
+    float x;
+    float y;
+    float Phi = 0.000001;
+    int x_center, y_center, yaw_local;
 
-    static int circleHeight = 6.4;
+    int circleHeight = 6.4;
 
     x_center = drone->local_position.x;
     y_center = drone->local_position.y;
-    circleRadiusIncrements = 0.0;
+    float circleRadiusIncrements = 0.0;
 
     while(circleRadiusIncrements <= circleRadius && !targetfound)
     {
         x =  x_center + circleRadiusIncrements;
         y =  y_center;
         circleRadiusIncrements = circleRadiusIncrements + 0.05;
-        drone->local_position_control(x ,y ,circleHeight, 0);
+        drone->local_position_control(x,y ,circleHeight, 0);
         usleep(20000);
     }
     usleep(500000);
     yaw = 0;
-    static float x_start = drone->local_position.x;
-    static float y_start = drone->local_position.y;
+    float x_start = drone->local_position.x;
+    float y_start = drone->local_position.y;
     cout << "x_center: " << x_center <<endl;
     cout << "y_center: " << y_center <<endl;
-    static int scale = floor(circleRadius/15)+1;
-    static int loops = 1890*scale;
+    int scale = floor(circleRadius/15)+1;
+    int loops = 1890*scale;
     /* start to draw circle */
     for(int i = 0; i < loops; i ++)
     {
@@ -938,12 +967,13 @@ void flyCircle(DJIDrone *drone, int circleRadius){
         if(yaw > 180){
             yaw = yaw-360;
         }
-        drone->local_position_control(x ,y ,circleHeight, yaw);
+        drone->local_position_controlx,y ,circleHeight, yaw);
         usleep(20000);
     }
     finishedFly = true;
 }
 void goTo(DJIDrone *drone, float posX, float posY){
+    cout << "go to" <<endl;
     yaw = 0;
     float x = drone->local_position.x;
     float y = drone->local_position.y;
@@ -962,11 +992,12 @@ void goTo(DJIDrone *drone, float posX, float posY){
         else if(cvRound(y) > cvRound(posY)){
             y = y-0.05;
         }
-        drone->local_position_control(x,y ,6.4, yaw);
+        drone->local_position_control(y,x ,6.4, yaw);
         usleep(20000);
     }
 }
 void landOnTarget(DJIDrone *drone){
+    cout << "land on target" <<endl;
     processedImage output;
     Mat img = captureImage();
     output = processImage(img);
