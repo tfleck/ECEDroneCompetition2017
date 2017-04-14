@@ -22,6 +22,7 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <future>
 
 //Define namespaces
 using namespace std;
@@ -42,6 +43,7 @@ Mat processSection(Mat m);
 void goTo(DJIDrone *drone, float posX, float posY);
 void landOnTarget(DJIDrone *drone);
 void flySideways(DJIDrone *drone,int distance, bool direction);
+void flyCircle(DJIDrone *drone, int circleRadius);
 //! Function Prototypes for Mobile command callbacks - Core Functions
 void ObtainControlMobileCallback(DJIDrone *drone);
 void ReleaseControlMobileCallback(DJIDrone *drone);
