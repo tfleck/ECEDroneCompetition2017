@@ -9,7 +9,7 @@
  *
  */
 
-
+//Include Necessary Libs
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include <ros/ros.h>
@@ -20,13 +20,28 @@
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
 #include <iostream>
-#include <string.h>
 #include <cstring>
+#include <cmath>
 
+//Define namespaces
 using namespace std;
 using namespace cv;
 using namespace DJI::onboardSDK;
 
+//Define Structs
+struct processedImage {
+    Mat imgOrig;
+    Mat imgThresh;
+    vector<Vec3f> circles;
+};
+
+//Define vision system functions
+processedImage processImage(Mat);
+bool processData(int, int, int, int);
+Mat processSection(Mat m);
+void goTo(DJIDrone *drone, float posX, float posY);
+void landOnTarget(DJIDrone *drone);
+void flySideways(DJIDrone *drone,int distance, bool direction);
 //! Function Prototypes for Mobile command callbacks - Core Functions
 void ObtainControlMobileCallback(DJIDrone *drone);
 void ReleaseControlMobileCallback(DJIDrone *drone);
@@ -48,13 +63,16 @@ void LocalNavigationTestMobileCallback(DJIDrone *drone);
 void GlobalNavigationTestMobileCallback(DJIDrone *drone);
 void WaypointNavigationTestMobileCallback(DJIDrone *drone);
 void VirtuaRCTestMobileCallback(DJIDrone *drone);
-
 //! For LAS logging
 void StartMapLASLoggingMobileCallback(DJIDrone *drone);
 void StopMapLASLoggingMobileCallback(DJIDrone *drone);
 void StartCollisionAvoidanceCallback(DJIDrone *drone);
 void StopCollisionAvoidanceCallback(DJIDrone *drone);
 
+//Global Variables
+bool targetfound = false;
+bool finishedFly = false;
+float yaw = 0;
 
 static void Display_Main_Menu(void)
 {
@@ -66,8 +84,8 @@ static void Display_Main_Menu(void)
     printf("| [4]  Takeoff                  | [23] Hotpoint Mission Upload     |\n");
     printf("| [5]  Landing                  | [24] Followme Mission Upload     |\n");
     printf("| [6]  Go Home                  | [25] Mission Start               |\n");
-    printf("| [7]  Gimbal Control Sample    | [26] Mission Pause               |\n");
-    printf("| [8]  Attitude Control Sample  | [27] Mission Resume              |\n");
+    printf("| [7]  Concentric Circle Search | [26] Mission Pause               |\n");
+    printf("| [8]  Rectangle Search         | [27] Mission Resume              |\n");
     printf("| [9]  Draw Circle Sample       | [28] Mission Cancel              |\n");
     printf("| [10] Draw Square Sample       | [29] Mission Waypoint Download   |\n");
     printf("| [11] Take a Picture           | [30] Mission Waypoint Set Speed  |\n");
@@ -100,6 +118,9 @@ int main(int argc, char *argv[])
     ROS_INFO("sdk_service_client_test");
     ros::NodeHandle nh;
     DJIDrone* drone = new DJIDrone(nh);
+
+    //enable opencv optimizations
+    setUseOptimized(true);
 
     //virtual RC test data
     uint32_t virtual_rc_data[16];
@@ -198,194 +219,58 @@ int main(int argc, char *argv[])
                 drone->gohome();
                 break;
             case 7:
-                /*gimbal test*/
-
-                drone->gimbal_angle_control(0, 0, 1800, 20);
-                sleep(2);
-                drone->gimbal_angle_control(0, 0, -1800, 20);
-                sleep(2);
-                drone->gimbal_angle_control(300, 0, 0, 20);
-                sleep(2);
-                drone->gimbal_angle_control(-300, 0, 0, 20);
-                sleep(2);
-                drone->gimbal_angle_control(0, 300, 0, 20);
-                sleep(2);
-                drone->gimbal_angle_control(0, -300, 0, 20);
-                sleep(2);
-                drone->gimbal_speed_control(100, 0, 0);
-                sleep(2);
-                drone->gimbal_speed_control(-100, 0, 0);
-                sleep(2);
-                drone->gimbal_speed_control(0, 0, 200);
-                sleep(2);
-                drone->gimbal_speed_control(0, 0, -200);
-                sleep(2);
-                drone->gimbal_speed_control(0, 200, 0);
-                sleep(2);
-                drone->gimbal_speed_control(0, -200, 0);
-                sleep(2);
-                drone->gimbal_angle_control(0, 0, 0, 20);
+                /*Concentric Circle Search*/
+                drone->takeoff();
+                sleep(8);
+                for(int r=3; r<100; r+=3) {
+                    finishedFly = false;
+                    std::async(flyCircle, drone, radius * M_PI);
+                    while (!finishedFly && !targetfound) {
+                        Mat img = captureImage();
+                        processImage(img);
+                    }
+                    if(targetfound) {
+                        break;
+                    }
+                }
+                if(targetfound) {
+                    landOnTarget(drone);
+                }
+                else{
+                    drone->landing();
+                }
                 break;
-
             case 8:
                 /* attitude control sample*/
                 drone->takeoff();
                 sleep(8);
-
-
-                for(int i = 0; i < 100; i ++)
-                {
-                    if(i < 90)
-                        drone->attitude_control(0x40, 0, 2, 0, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
+                float x = drone->local_position.x;
+                float y = drone->local_position.y;
+                //25sin45
+                x = x-17.667;
+                y = y+25;
+                yaw = 0;
+                goTo(drone,x,y);
+                finishedFly = false;
+                std::async(flySideways,drone,36,true);
+                while (!finishedFly && !targetfound) {
+                    Mat img = captureImage();
+                    processImage(img);
                 }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0x40, 2, 0, 0, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
+                if(targetfound) {
+                    landOnTarget(drone);
                 }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0x40, -2, 0, 0, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
+                else{
+                    drone->landing();
                 }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0x40, 0, 2, 0, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
-                }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0x40, 0, -2, 0, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
-                }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0x40, 0, 0, 0.5, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
-                }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0x40, 0, 0, -0.5, 0);
-                    else
-                        drone->attitude_control(0x40, 0, 0, 0, 0);
-                    usleep(20000);
-                }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0xA, 0, 0, 0, 90);
-                    else
-                        drone->attitude_control(0xA, 0, 0, 0, 0);
-                    usleep(20000);
-                }
-                sleep(1);
-
-                for(int i = 0; i < 200; i ++)
-                {
-                    if(i < 180)
-                        drone->attitude_control(0xA, 0, 0, 0, -90);
-                    else
-                        drone->attitude_control(0xA, 0, 0, 0, 0);
-                    usleep(20000);
-                }
-                sleep(1);
-
-                drone->landing();
-
                 break;
 
             case 9:
                 /*draw circle sample*/
-                static float R = 2;
-                static float V = 2;
-                static float x;
-                static float y;
-                Phi = 0;
                 std::cout<<"Enter the radius of the circle in meteres (10m > x > 4m)\n";
-                std::cin>>circleRadius;
+                std::cin>>circleRad;
+                flyCircle(drone,circleRad);
 
-                std::cout<<"Enter height in meteres (Relative to take off point. 15m > x > 5m) \n";
-                std::cin>>circleHeight;
-
-                if (circleHeight < 5)
-                {
-                    circleHeight = 5;
-                }
-                else if (circleHeight > 15)
-                {
-                    circleHeight = 15;
-                }
-                if (circleRadius < 4)
-                {
-                    circleRadius = 4;
-                }
-                else if (circleRadius > 10)
-                {
-                    circleRadius = 10;
-                }
-
-                x_center = drone->local_position.x;
-                y_center = drone->local_position.y;
-                circleRadiusIncrements = 0.01;
-
-                for(int j = 0; j < 1000; j ++)
-                {
-                    if (circleRadiusIncrements < circleRadius)
-                    {
-                        x =  x_center + circleRadiusIncrements;
-                        y =  y_center;
-                        circleRadiusIncrements = circleRadiusIncrements + 0.01;
-                        drone->local_position_control(x ,y ,circleHeight, 0);
-                        usleep(20000);
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-
-                /* start to draw circle */
-                for(int i = 0; i < 1890; i ++)
-                {
-                    x =  x_center + circleRadius*cos((Phi/300));
-                    y =  y_center + circleRadius*sin((Phi/300));
-                    Phi = Phi+1;
-                    drone->local_position_control(x ,y ,circleHeight, 20);
-                    usleep(20000);
-                }
                 break;
 
             case 10:
@@ -1086,4 +971,207 @@ void StopCollisionAvoidanceCallback(DJIDrone *drone)
     system("rosnode kill /drone_tf_builder /dji_occupancy_grid_node /dji_collision_detection_node /collision_velodyne_nodelet_manager /manual_fly");
     usleep(1e4);
     drone->request_sdk_permission_control();
+}
+
+//Reads in next from from camera and returns it
+Mat captureImage(){
+    Mat img;
+    //Define video stream
+    VideoCapture cap(0);
+    cap.set(CAP_PROP_FRAME_WIDTH, maxX);
+    cap.set(CAP_PROP_FRAME_HEIGHT, maxY);
+    cap.set(CAP_PROP_FPS, 40);
+    bool bSuccess = cap.read(img); // read a new frame from video
+    return img;
+}//captureImage
+
+//Processes image passed for the landing pad using hsv range passed
+processedImage processImage(Mat imgOriginal) {
+    Mat imgHSV;
+    //predefine HSV color range
+    int iLowH = 7;
+    int iHighH = 25;
+    int iLowS = 120;
+    int iHighS = 240;
+    int iLowV = 120;
+    int iHighV = 225;
+    vector<int> hsvVals = { iLowH, iLowS, iLowV, iHighH, iHighS, iHighV };
+    imgHSV = imgOriginal.clone();
+    cvtColor(imgHSV, imgHSV, COLOR_BGR2HSV);
+    inRange(imgHSV, Scalar(hsvVals[0], hsvVals[1], hsvVals[2]), Scalar(hsvVals[3], hsvVals[4], hsvVals[5]), imgHSV);
+
+    Mat top_left = (imgHSV(Rect(0, 0, 320, 240)));
+    Mat top_right = (imgHSV(Rect(320, 0, 320, 240)));
+    Mat bottom_left = (imgHSV(Rect(0, 240, 320, 240)));
+    Mat bottom_right = (imgHSV(Rect(320, 240, 320, 240)));
+
+    //Convert the captured frame from BGR to HSV
+    auto f1 = std::async(processSection, top_left);
+    auto f2 = std::async(processSection, top_right);
+    auto f3 = std::async(processSection, bottom_left);
+    auto f4 = std::async(processSection, bottom_right);
+    top_left = f1.get();
+    top_right = f2.get();
+    bottom_left = f3.get();
+    bottom_right = f4.get();
+
+    vector<Vec3f> circles;
+
+    //Find target
+    HoughCircles(imgHSV, circles, CV_HOUGH_GRADIENT, 1, 10000, 200, 35, 5, 500);
+
+    //Draw circles on top of original image
+    for (int i = 0; i < circles.size(); i++)
+    {
+        targetfound = true;
+        Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+        int radius = cvRound(circles[i][2]);
+
+        //Draw an indicator on the center of mass
+        circle(imgOriginal, center, 5, Scalar(0, 255, 0), -1, 8, 0);//center point
+        //circle(imgOriginal, center, radius, Scalar(0, 0, 255), 2, 8, 0);//outline
+    }
+
+    //Return data to main function
+    struct processedImage output = { imgOriginal,imgHSV,circles };
+    return output;
+}//processImage
+
+//Used for multithreading image processing
+Mat processSection(Mat m) {
+    medianBlur(m, m, 5);
+    return m;
+}//processSection
+
+//Fly horizontally if true, right, false is left
+void flySideways(DJIDrone *drone,int distance, bool direction){
+    yaw = 0;
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    if(direction){
+        x+distance;
+    }
+    else{
+        x-distance;
+    }
+    float increment = 0.05;
+    while((cvRound(x) != cvRound(posX) || cvRound(y)!=cvRound(posY)) && !targetfound)
+    {
+        if(cvRound(x) < cvRound(posX)) {
+            x = x + 0.05;
+        }
+        else if(cvRound(x) > cvRound(posX)){
+            x = x-0.05;
+        }
+        if(cvRound(y) < cvRound(posY)) {
+            y = y + 0.05;
+        }
+        else if(cvRound(y) > cvRound(posY)){
+            y = y-0.05;
+        }
+        drone->local_position_control(x,y ,6.4, yaw);
+        usleep(20000);
+    }
+    finishedFly = true;
+}
+
+//Fly a circle of a given radius
+void flyCircle(DJIDrone *drone, int circleRadius){
+    static float R = 2;
+    static float V = 2;
+    static float x;
+    static float y;
+    Phi = 0.000001;
+
+    static int circleHeight = 6.4;
+
+    if (circleHeight < 5)
+    {
+        circleHeight = 5;
+    }
+    else if (circleHeight > 15)
+    {
+        circleHeight = 15;
+    }
+    if (circleRadius < 4)
+    {
+        circleRadius = 4;
+    }
+    else if (circleRadius > 60)
+    {
+        circleRadius = 10;
+    }
+
+    x_center = drone->local_position.x;
+    y_center = drone->local_position.y;
+    circleRadiusIncrements = 0.0;
+
+    while(circleRadiusIncrements <= circleRadius && !targetfound)
+    {
+        x =  x_center + circleRadiusIncrements;
+        y =  y_center;
+        circleRadiusIncrements = circleRadiusIncrements + 0.05;
+        drone->local_position_control(x ,y ,circleHeight, 0);
+        usleep(20000);
+    }
+    usleep(500000);
+    yaw = 0;
+    static float x_start = drone->local_position.x;
+    static float y_start = drone->local_position.y;
+    cout << "x_center: " << x_center <<endl;
+    cout << "y_center: " << y_center <<endl;
+    static int scale = floor(circleRadius/15)+1;
+    static int loops = 1890*scale;
+    /* start to draw circle */
+    for(int i = 0; i < loops; i ++)
+    {
+        if(targetfound){
+           break;
+        }
+        x =  x_center + circleRadius*cos((Phi/300));
+        y =  y_center + circleRadius*sin((Phi/300));
+        Phi = Phi+(1/scale);
+        yaw = Phi/300;
+        yaw = (yaw*180)/(M_PI);
+        if(yaw > 180){
+            yaw = yaw-360;
+        }
+        drone->local_position_control(x ,y ,circleHeight, yaw);
+        usleep(20000);
+    }
+    finishedFly = true;
+}
+void goTo(DJIDrone *drone, float posX, float posY){
+    yaw = 0;
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    float increment = 0.05;
+    while(cvRound(x) != cvRound(posX) || cvRound(y)!=cvRound(posY))
+    {
+        if(cvRound(x) < cvRound(posX)) {
+            x = x + 0.05;
+        }
+        else if(cvRound(x) > cvRound(posX)){
+            x = x-0.05;
+        }
+        if(cvRound(y) < cvRound(posY)) {
+            y = y + 0.05;
+        }
+        else if(cvRound(y) > cvRound(posY)){
+            y = y-0.05;
+        }
+        drone->local_position_control(x,y ,6.4, yaw);
+        usleep(20000);
+    }
+}
+void landOnTarget(DJIDrone *drone){
+    processedImage output;
+    Mat img = captureImage();
+    output = processImage(img);
+    vector <Vec3f> circles = output.circles;
+    float posX = circles[0][0];
+    float posY = circles[0][1];
+    goTo(drone,posX,posY);
+    drone->landing();
+
 }
