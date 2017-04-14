@@ -59,7 +59,7 @@ void StopCollisionAvoidanceCallback(DJIDrone *drone);
 static void Display_Main_Menu(void)
 {
     printf("\r\n");
-    printf("+-------------------------- < Main menu > ------------------------+\n");
+    printf("+-------------------------- < Main menu > -------------------------+\n");
     printf("| [1]  SDK Version Query        | [20] Set Sync Flag Test          |\n");
     printf("| [2]  Request Control          | [21] Set Msg Frequency Test      |\n");
     printf("| [3]  Release Control          | [22] Waypoint Mission Upload     |\n");
@@ -75,10 +75,10 @@ static void Display_Main_Menu(void)
     printf("| [13] Stop Record Video        | [32] Mission Hotpoint Set Speed  |\n");
     printf("| [14] Local Navigation Test    | [33] Mission Hotpoint Set Radius |\n");
     printf("| [15] Global Navigation Test   | [34] Mission Hotpoint Reset Yaw  |\n");
-    printf("| [16] Waypoint Navigation Test | [35] Test Picamera |\n");
+    printf("| [16] Waypoint Navigation Test | [35] Test Picamera               |\n");
     printf("| [17] Arm the Drone            | [36] Mission Hotpoint Download   |\n");
     printf("| [18] Disarm the Drone         | [37] Enter Mobile commands mode  |\n");
-    printf("| [19] Virtual RC Test           \n");
+    printf("| [19] Virtual RC Test          | [99] Exit Program                | \n");
     printf("+-----------------------------------------------------------------+\n");
     printf("input 1/2/3 etc..then press enter key\r\n");
     printf("use `rostopic echo` to query drone status\r\n");
@@ -383,7 +383,7 @@ int main(int argc, char *argv[])
                     x =  x_center + circleRadius*cos((Phi/300));
                     y =  y_center + circleRadius*sin((Phi/300));
                     Phi = Phi+1;
-                    drone->local_position_control(x ,y ,circleHeight, 0);
+                    drone->local_position_control(x ,y ,circleHeight, 20);
                     usleep(20000);
                 }
                 break;
