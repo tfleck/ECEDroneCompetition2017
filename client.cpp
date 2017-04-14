@@ -44,6 +44,7 @@ void goTo(DJIDrone *drone, float posX, float posY);
 void landOnTarget(DJIDrone *drone);
 void flySideways(DJIDrone *drone,int distance, bool direction);
 void flyCircle(DJIDrone *drone, int circleRadius);
+void flyRectangle(DJIDrone *drone, int length, int width);
 //! Function Prototypes for Mobile command callbacks - Core Functions
 void ObtainControlMobileCallback(DJIDrone *drone);
 void ReleaseControlMobileCallback(DJIDrone *drone);
@@ -80,25 +81,13 @@ static void Display_Main_Menu(void)
 {
     printf("\r\n");
     printf("+-------------------------- < Main menu > -------------------------+\n");
-    printf("| [1]  SDK Version Query        | [20] Set Sync Flag Test          |\n");
-    printf("| [2]  Request Control          | [21] Set Msg Frequency Test      |\n");
-    printf("| [3]  Release Control          | [22] Waypoint Mission Upload     |\n");
-    printf("| [4]  Takeoff                  | [23] Hotpoint Mission Upload     |\n");
-    printf("| [5]  Landing                  | [24] Followme Mission Upload     |\n");
-    printf("| [6]  Go Home                  | [25] Mission Start               |\n");
-    printf("| [7]  Concentric Circle Search | [26] Mission Pause               |\n");
-    printf("| [8]  Rectangle Search         | [27] Mission Resume              |\n");
-    printf("| [9]  Draw Circle Sample       | [28] Mission Cancel              |\n");
-    printf("| [10] Draw Square Sample       | [29] Mission Waypoint Download   |\n");
-    printf("| [11] Take a Picture           | [30] Mission Waypoint Set Speed  |\n");
-    printf("| [12] Start Record Video       | [31] Mission Waypoint Get Speed  |\n");
-    printf("| [13] Stop Record Video        | [32] Mission Hotpoint Set Speed  |\n");
-    printf("| [14] Local Navigation Test    | [33] Mission Hotpoint Set Radius |\n");
-    printf("| [15] Global Navigation Test   | [34] Mission Hotpoint Reset Yaw  |\n");
-    printf("| [16] Waypoint Navigation Test | [35] Test Picamera               |\n");
-    printf("| [17] Arm the Drone            | [36] Mission Hotpoint Download   |\n");
-    printf("| [18] Disarm the Drone         | [37] Enter Mobile commands mode  |\n");
-    printf("| [19] Virtual RC Test          | [99] Exit Program                | \n");
+    printf("| [1]  SDK Version Query        | [7]  Concentric Circle Search    |\n");
+    printf("| [2]  Request Control          | [8]  Rectangle Sideways Search   |\n");
+    printf("| [3]  Release Control          | [9]  Straight Ahead Search       |\n");
+    printf("| [4]  Takeoff                  | [10] Test Rectangle Path         |\n");
+    printf("| [5]  Landing                  | [11] Test Circle Path            |\n");
+    printf("| [6]  Go Home                  | [12] Test Picamera               |\n");
+    printf("| [13]                          | [99] Exit Program                | \n");
     printf("+-----------------------------------------------------------------+\n");
     printf("input 1/2/3 etc..then press enter key\r\n");
     printf("use `rostopic echo` to query drone status\r\n");
@@ -220,358 +209,113 @@ int main(int argc, char *argv[])
                 /* go home*/
                 drone->gohome();
                 break;
-            case 7:
+            case 7: {
                 /*Concentric Circle Search*/
+                drone->request_sdk_permission_control();
+                sleep(1);
                 drone->takeoff();
                 sleep(8);
-                for(int r=3; r<100; r+=3) {
+                for (int r = 3; r < 100; r += 3) {
                     finishedFly = false;
-                    std::async(flyCircle, drone, radius * M_PI);
+                    std::async(flyCircle, drone, r * M_PI);
                     while (!finishedFly && !targetfound) {
                         Mat img = captureImage();
                         processImage(img);
                     }
-                    if(targetfound) {
+                    if (targetfound) {
                         break;
                     }
                 }
-                if(targetfound) {
+                if (targetfound) {
                     landOnTarget(drone);
-                }
-                else{
+                } else {
                     drone->landing();
                 }
+            }
                 break;
-            case 8:
-                /* attitude control sample*/
+            case 8: {
+                /* Rectangle End to End Search*/
+                drone->request_sdk_permission_control();
+                sleep(1);
                 drone->takeoff();
                 sleep(8);
                 float x = drone->local_position.x;
                 float y = drone->local_position.y;
                 //25sin45
-                x = x-17.667;
-                y = y+25;
+                x = x - 5.384;
+                y = y + 7.62;
                 yaw = 0;
-                goTo(drone,x,y);
+                goTo(drone, x, y);
                 finishedFly = false;
-                std::async(flySideways,drone,36,true);
+                std::async(flySideways, drone, 11, true);
                 while (!finishedFly && !targetfound) {
                     Mat img = captureImage();
                     processImage(img);
                 }
-                if(targetfound) {
+                if (targetfound) {
                     landOnTarget(drone);
-                }
-                else{
+                } else {
                     drone->landing();
                 }
+            }
                 break;
-
-            case 9:
-                /*draw circle sample*/
-                std::cout<<"Enter the radius of the circle in meteres (10m > x > 4m)\n";
-                std::cin>>circleRad;
-                flyCircle(drone,circleRad);
-
+            case 9: {
+                /*Straight ahead search*/
+                drone->request_sdk_permission_control();
+                sleep(1);
+                drone->takeoff();
+                sleep(8);
+                yaw = 0;
+                float x = drone->local_position.x;
+                float y = drone->local_position.y;
+                //~19ft forward
+                x = x;
+                y = y + 6.7;
+                yaw = 0;
+                goTo(drone, x, y);
+                while(!targetfound && y<9.4){
+                    Mat img = captureImage();
+                    processImage(img);
+                    goTo(drone,x,y+0.05);
+                }
+                if (targetfound) {
+                    landOnTarget(drone);
+                }
+                else {
+                    for (int w = 6; w < 18; w += 6) {
+                        std::async(flyRectangle, drone, w,10);
+                        while (!finishedFly && !targetfound) {
+                            Mat img = captureImage();
+                            processImage(img);
+                        }
+                        if (targetfound) {
+                            break;
+                        }
+                        float x = drone->local_position.x;
+                        float y = drone->local_position.y;
+                        goTo(drone,x,y+10);
+                    }
+                    if (targetfound) {
+                        landOnTarget(drone);
+                    } else {
+                        drone->landing();
+                    }
+                }
+            }
                 break;
 
             case 10:
                 /*draw square sample*/
-                for(int i = 0;i < 60;i++)
-                {
-                    drone->attitude_control( Flight::HorizontalLogic::HORIZONTAL_POSITION |
-                                             Flight::VerticalLogic::VERTICAL_VELOCITY |
-                                             Flight::YawLogic::YAW_ANGLE |
-                                             Flight::HorizontalCoordinate::HORIZONTAL_BODY |
-                                             Flight::SmoothMode::SMOOTH_ENABLE,
-                                             3, 3, 0, 0 );
-                    usleep(20000);
-                }
-                for(int i = 0;i < 60;i++)
-                {
-                    drone->attitude_control( Flight::HorizontalLogic::HORIZONTAL_POSITION |
-                                             Flight::VerticalLogic::VERTICAL_VELOCITY |
-                                             Flight::YawLogic::YAW_ANGLE |
-                                             Flight::HorizontalCoordinate::HORIZONTAL_BODY |
-                                             Flight::SmoothMode::SMOOTH_ENABLE,
-                                             -3, 3, 0, 0);
-                    usleep(20000);
-                }
-                for(int i = 0;i < 60;i++)
-                {
-                    drone->attitude_control( Flight::HorizontalLogic::HORIZONTAL_POSITION |
-                                             Flight::VerticalLogic::VERTICAL_VELOCITY |
-                                             Flight::YawLogic::YAW_ANGLE |
-                                             Flight::HorizontalCoordinate::HORIZONTAL_BODY |
-                                             Flight::SmoothMode::SMOOTH_ENABLE,
-                                             -3, -3, 0, 0);
-                    usleep(20000);
-                }
-                for(int i = 0;i < 60;i++)
-                {
-                    drone->attitude_control( Flight::HorizontalLogic::HORIZONTAL_POSITION |
-                                             Flight::VerticalLogic::VERTICAL_VELOCITY |
-                                             Flight::YawLogic::YAW_ANGLE |
-                                             Flight::HorizontalCoordinate::HORIZONTAL_BODY |
-                                             Flight::SmoothMode::SMOOTH_ENABLE,
-                                             3, -3, 0, 0);
-                    usleep(20000);
-                }
+
                 break;
-            case 11:
-                /*take a picture*/
-                drone->take_picture();
-                break;
-            case 12:
-                /*start video*/
-                drone->start_video();
-                break;
-            case 13:
-                /*stop video*/
-                drone->stop_video();
-                break;
-            case 14:
-                /* Local Navi Test */
-                drone->local_position_navigation_send_request(-100, -100, 100);
-                break;
-            case 15:
-                /* GPS Navi Test */
-                drone->global_position_navigation_send_request(22.5420, 113.9580, 10);
-                break;
-            case 16:
-                /* Waypoint List Navi Test */
-            {
-                waypoint0.latitude = 22.535;
-                waypoint0.longitude = 113.95;
-                waypoint0.altitude = 100;
-                waypoint0.staytime = 5;
-                waypoint0.heading = 0;
+            case 11: {
+                /*draw circle sample*/
+                std::cout << "Enter the radius of the circle in meteres (10m > x > 4m)\n";
+                std::cin >> circleRad;
+                flyCircle(drone, circleRad);
             }
-                newWaypointList.waypoint_list.push_back(waypoint0);
-
-                {
-                    waypoint1.latitude = 22.535;
-                    waypoint1.longitude = 113.96;
-                    waypoint1.altitude = 100;
-                    waypoint1.staytime = 0;
-                    waypoint1.heading = 90;
-                }
-                newWaypointList.waypoint_list.push_back(waypoint1);
-
-                {
-                    waypoint2.latitude = 22.545;
-                    waypoint2.longitude = 113.96;
-                    waypoint2.altitude = 100;
-                    waypoint2.staytime = 4;
-                    waypoint2.heading = -90;
-                }
-                newWaypointList.waypoint_list.push_back(waypoint2);
-
-                {
-                    waypoint3.latitude = 22.545;
-                    waypoint3.longitude = 113.96;
-                    waypoint3.altitude = 10;
-                    waypoint3.staytime = 2;
-                    waypoint3.heading = 180;
-                }
-                newWaypointList.waypoint_list.push_back(waypoint3);
-
-                {
-                    waypoint4.latitude = 22.525;
-                    waypoint4.longitude = 113.93;
-                    waypoint4.altitude = 50;
-                    waypoint4.staytime = 0;
-                    waypoint4.heading = -180;
-                }
-                newWaypointList.waypoint_list.push_back(waypoint4);
-
-                drone->waypoint_navigation_send_request(newWaypointList);
                 break;
-            case 17:
-                //drone arm
-                drone->drone_arm();
-                break;
-            case 18:
-                //drone disarm
-                drone->drone_disarm();
-                break;
-            case 19:
-                //virtual rc test 1: arm & disarm
-                drone->virtual_rc_enable();
-                usleep(20000);
-
-                virtual_rc_data[0] = 1024;	//0-> roll     	[1024-660,1024+660]
-                virtual_rc_data[1] = 1024;	//1-> pitch    	[1024-660,1024+660]
-                virtual_rc_data[2] = 1024+660;	//2-> throttle 	[1024-660,1024+660]
-                virtual_rc_data[3] = 1024;	//3-> yaw      	[1024-660,1024+660]
-                virtual_rc_data[4] = 1684;	 	//4-> gear		{1684(UP), 1324(DOWN)}
-                virtual_rc_data[6] = 1552;    	//6-> mode     	{1552(P), 1024(A), 496(F)}
-
-                for (int i = 0; i < 100; i++){
-                    drone->virtual_rc_control(virtual_rc_data);
-                    usleep(20000);
-                }
-
-                //virtual rc test 2: yaw
-                drone->virtual_rc_enable();
-                virtual_rc_data[0] = 1024;		//0-> roll     	[1024-660,1024+660]
-                virtual_rc_data[1] = 1024;		//1-> pitch    	[1024-660,1024+660]
-                virtual_rc_data[2] = 1024-200;	//2-> throttle 	[1024-660,1024+660]
-                virtual_rc_data[3] = 1024;		//3-> yaw      	[1024-660,1024+660]
-                virtual_rc_data[4] = 1324;	 	//4-> gear		{1684(UP), 1324(DOWN)}
-                virtual_rc_data[6] = 1552;    	//6-> mode     	{1552(P), 1024(A), 496(F)}
-
-                for(int i = 0; i < 100; i++) {
-                    drone->virtual_rc_control(virtual_rc_data);
-                    usleep(20000);
-                }
-                drone->virtual_rc_disable();
-                break;
-            case 20:
-                //sync flag
-                drone->sync_flag_control(1);
-                break;
-            case 21:
-                //set msg frequency
-                drone->set_message_frequency(msg_frequency_data);
-                break;
-
-            case 22:
-
-                // Clear the vector of previous waypoints
-                waypoint_task.mission_waypoint.clear();
-
-                //mission waypoint upload
-                waypoint_task.velocity_range = 10;
-                waypoint_task.idle_velocity = 3;
-                waypoint_task.action_on_finish = 0;
-                waypoint_task.mission_exec_times = 1;
-                waypoint_task.yaw_mode = 4;
-                waypoint_task.trace_mode = 0;
-                waypoint_task.action_on_rc_lost = 0;
-                waypoint_task.gimbal_pitch_mode = 0;
-
-                static int num_waypoints = 4;
-                static int altitude = 80;
-                // Currently hard coded, should be dynamic
-                static float orig_lat = 22.5401;
-                static float orig_long = 113.9468;
-                for(int i = 0; i < num_waypoints; i++)
-                {
-
-                    // Careens in zig-zag pattern
-                    waypoint.latitude = (orig_lat+=.0001);
-                    if (i % 2 == 1){
-                        waypoint.longitude = orig_long+=.0001;
-                    } else {
-                        waypoint.longitude = orig_long;
-                    }
-                    waypoint.altitude = altitude-=10;
-                    waypoint.damping_distance = 0;
-                    waypoint.target_yaw = 0;
-                    waypoint.target_gimbal_pitch = 0;
-                    waypoint.turn_mode = 0;
-                    waypoint.has_action = 0;
-                    /*
-                    waypoint.action_time_limit = 10;
-                    waypoint.waypoint_action.action_repeat = 1;
-                    waypoint.waypoint_action.command_list[0] = 1;
-                    waypoint.waypoint_action.command_parameter[0] = 1;
-                    */
-
-                    waypoint_task.mission_waypoint.push_back(waypoint);
-                }
-
-                /*
-
-				waypoint.latitude = 22.540015;
-				waypoint.longitude = 113.94659;
-				waypoint.altitude = 120;
-				waypoint.damping_distance = 2;
-				waypoint.target_yaw = 180;
-				waypoint.target_gimbal_pitch = 0;
-				waypoint.turn_mode = 0;
-				waypoint.has_action = 0;
-				waypoint.action_time_limit = 10;
-				waypoint.waypoint_action.action_repeat = 1;
-				waypoint.waypoint_action.command_list[0] = 1;
-				waypoint.waypoint_action.command_list[1] = 1;
-				waypoint.waypoint_action.command_parameter[0] = 1;
-				waypoint.waypoint_action.command_parameter[1] = 1;
-
-
-				waypoint_task.mission_waypoint.push_back(waypoint);
-
-                */
-
-                drone->mission_waypoint_upload(waypoint_task);
-                break;
-            case 23:
-                //mission hotpoint upload
-                hotpoint_task.latitude = 22.542813;
-                hotpoint_task.longitude = 113.958902;
-                hotpoint_task.altitude = 20;
-                hotpoint_task.radius = 10;
-                hotpoint_task.angular_speed = 10;
-                hotpoint_task.is_clockwise = 0;
-                hotpoint_task.start_point = 0;
-                hotpoint_task.yaw_mode = 0;
-
-                drone->mission_hotpoint_upload(hotpoint_task);
-                break;
-            case 24:
-                //mission followme upload
-                followme_task.mode = 0;
-                followme_task.yaw_mode = 0;
-                followme_task.initial_latitude = 23.540091;
-                followme_task.initial_longitude = 113.946593;
-                followme_task.initial_altitude = 10;
-                followme_task.sensitivity = 1;
-
-                drone->mission_followme_upload(followme_task);
-                break;
-            case 25:
-                //mission start
-                drone->mission_start();
-                break;
-            case 26:
-                //mission pause
-                drone->mission_pause();
-                break;
-            case 27:
-                //mission resume
-                drone->mission_resume();
-                break;
-            case 28:
-                //mission cancel
-                drone->mission_cancel();
-                break;
-            case 29:
-                //waypoint mission download
-                waypoint_task = drone->mission_waypoint_download();
-                break;
-            case 30:
-                //mission waypoint set speed
-                drone->mission_waypoint_set_speed((float)5);
-                break;
-            case 31:
-                //mission waypoint get speed
-                printf("%f", drone->mission_waypoint_get_speed());
-                break;
-            case 32:
-                //mission hotpoint set speed
-                drone->mission_hotpoint_set_speed((float)5,(uint8_t)1);
-                break;
-            case 33:
-                //mission hotpoint set radius
-                drone->mission_hotpoint_set_radius((float)5);
-                break;
-            case 34:
-                //mission hotpoint reset yaw
-                drone->mission_hotpoint_reset_yaw();
-                break;
-            case 35:
-            {
+            case 12: {
                 //test picamera
                 VideoCapture cap(0);
                 //cap.set(CAP_PROP_FRAME_WIDTH, 1640);
@@ -590,17 +334,13 @@ int main(int argc, char *argv[])
                 cout << "end test" << endl;
             }
                 break;
+            case 13:
+                /*stop video*/
+                drone->stop_video();
+                break;
+
             case 99:
                 return 1;
-            case 37:
-                printf("Mobile Data Commands mode entered. Use OSDK Mobile App to use this feature \n");
-                printf("End program to exit this mode \n");
-                while(1)
-                {
-                    ros::spinOnce();
-                }
-            case 36:
-                hotpoint_task = drone->mission_hotpoint_download();
 
             default:
                 break;
@@ -1045,19 +785,96 @@ Mat processSection(Mat m) {
     return m;
 }//processSection
 
+//Fly a rectangular path
+void flyRectangle(DJIDrone *drone, int length, int width){
+    yaw = 0;
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    float posX;
+    float posY = y;
+    float increment = 0.05;
+    if(length <= 0){
+        posX = x-length;
+    }
+    else{
+        posX = x+length;
+    }
+    while((cvRound(x) != cvRound(posX)) && !targetfound)
+    {
+        if(cvRound(x) < cvRound(posX)) {
+            x = x + 0.05;
+        }
+        else{
+            x = x-0.05;
+        }
+        drone->local_position_control(x,y ,6.4, yaw);
+        usleep(20000);
+    }
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    posY = y-width;
+    while(cvRound(y)!= cvRound(posY) && !targetfound)
+    {
+        if(cvRound(y) < cvRound(posY)) {
+            y = y + 0.05;
+        }
+        else{
+            y = y-0.05;
+        }
+        drone->local_position_control(x,y ,6.4, yaw);
+        usleep(20000);
+    }
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    if(length <= 0){
+        posX = x+length;
+    }
+    else{
+        posX = x-length;
+    }
+    while((cvRound(x) != cvRound(posX)) && !targetfound)
+    {
+        if(cvRound(x) < cvRound(posX)) {
+            x = x + 0.05;
+        }
+        else{
+            x = x-0.05;
+        }
+        drone->local_position_control(x,y ,6.4, yaw);
+        usleep(20000);
+    }
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    posY = y+width;
+    while(cvRound(y)!= cvRound(posY) && !targetfound)
+    {
+        if(cvRound(y) < cvRound(posY)) {
+            y = y + 0.05;
+        }
+        else{
+            y = y-0.05;
+        }
+        drone->local_position_control(x,y ,6.4, yaw);
+        usleep(20000);
+    }
+    finishedFly = true;
+}
+
 //Fly horizontally if true, right, false is left
 void flySideways(DJIDrone *drone,int distance, bool direction){
     yaw = 0;
     float x = drone->local_position.x;
     float y = drone->local_position.y;
+    float posX;
+    float posY = y;
+    float increment = 0.05;
     if(direction){
-        x+distance;
+        posX = x+distance;
     }
     else{
-        x-distance;
+        posX = x-distance;
     }
-    float increment = 0.05;
-    while((cvRound(x) != cvRound(posX) || cvRound(y)!=cvRound(posY)) && !targetfound)
+    while((cvRound(x) != cvRound(posX) || cvRound(y)!= cvRound(posY)) && !targetfound)
     {
         if(cvRound(x) < cvRound(posX)) {
             x = x + 0.05;
@@ -1086,23 +903,6 @@ void flyCircle(DJIDrone *drone, int circleRadius){
     Phi = 0.000001;
 
     static int circleHeight = 6.4;
-
-    if (circleHeight < 5)
-    {
-        circleHeight = 5;
-    }
-    else if (circleHeight > 15)
-    {
-        circleHeight = 15;
-    }
-    if (circleRadius < 4)
-    {
-        circleRadius = 4;
-    }
-    else if (circleRadius > 60)
-    {
-        circleRadius = 10;
-    }
 
     x_center = drone->local_position.x;
     y_center = drone->local_position.y;
