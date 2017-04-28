@@ -23,6 +23,7 @@
 #include <cstring>
 #include <cmath>
 #include <future>
+#include <thread>
 
 //Define namespaces
 using namespace std;
@@ -35,6 +36,10 @@ struct processedImage {
     Mat imgThresh;
     vector<Vec3f> circles;
 };
+struct thread_data{
+    DJIDrone* drone;
+    float radius;
+};
 
 //Define vision system functions
 Mat captureImage();
@@ -42,7 +47,6 @@ processedImage processImage(Mat);
 bool processData(int, int, int, int);
 Mat processSection(Mat m);
 void goTo(DJIDrone *drone, float posX, float posY);
-void landOnTarget(DJIDrone *drone);
 void flySideways(DJIDrone *drone,int distance, bool direction);
 void flyCircle(DJIDrone *drone, float circleRadius);
 void flyRectangle(DJIDrone *drone, int length, int width);
@@ -81,7 +85,7 @@ float yaw = 0;
 static void Display_Main_Menu(void)
 {
     printf("\r\n");
-    printf("+-------------------------- < Main menu > -------------------------+\n");
+    printf("+-------------------------- < Main menu 3 > -------------------------+\n");
     printf("| [1]  SDK Version Query        | [7]  Concentric Circle Search    |\n");
     printf("| [2]  Request Control          | [8]  Rectangle Sideways Search   |\n");
     printf("| [3]  Release Control          | [9]  Straight Ahead Search       |\n");
@@ -216,22 +220,28 @@ int main(int argc, char *argv[])
                 sleep(1);
                 drone->takeoff();
                 sleep(8);
-                for (int r = 3; r < 100; r += 3) {
+                processedImage proc;
+                for (float r = 7.62; r < 8; r += 3) {
                     finishedFly = false;
-                    std::async(flyCircle, drone, r * M_PI);
+                    //std::async(flyCircle, drone, r);
+                    std::thread t1(&flyCircle,drone, r);
+                    t1.detach();
                     while (!finishedFly && !targetfound) {
                         Mat img = captureImage();
-                        processImage(img);
+                        proc = processImage(img);
                     }
                     if (targetfound) {
+                        vector <Vec3f> circles = proc.circles;
+                        float target_x = circles[0][0];
+                        float target_y = circles[0][1];
+                        cout << "target at" << target_x << " , " << target_y << endl;
+                        target_x = (target_x-320)/6.4;
+                        target_y = (target_y-240)/4.8;
+                        goTo(drone,target_x,target_y);
                         break;
                     }
                 }
-                if (targetfound) {
-                    landOnTarget(drone);
-                } else {
-                    drone->landing();
-                }
+                drone->landing();
             }
                 break;
             case 8: {
@@ -254,7 +264,7 @@ int main(int argc, char *argv[])
                     processImage(img);
                 }
                 if (targetfound) {
-                    landOnTarget(drone);
+                    //landOnTarget(drone);
                 } else {
                     drone->landing();
                 }
@@ -280,7 +290,7 @@ int main(int argc, char *argv[])
                     goTo(drone,x,y+0.05);
                 }
                 if (targetfound) {
-                    landOnTarget(drone);
+                    //landOnTarget(drone);
                 }
                 else {
                     for (int w = 6; w < 18; w += 6) {
@@ -297,7 +307,7 @@ int main(int argc, char *argv[])
                         goTo(drone,x,y+10);
                     }
                     if (targetfound) {
-                        landOnTarget(drone);
+                        //landOnTarget(drone);
                     } else {
                         drone->landing();
                     }
@@ -319,7 +329,10 @@ int main(int argc, char *argv[])
                 std::cout << "Enter the radius of the circle in meteres (10m > x > 4m)\n";
                 int circleRad = 0;
                 std::cin >> circleRad;
-                flyCircle(drone, circleRad);
+                //struct thread_data tdata = { drone, circleRad };
+                std::thread t1(&flyCircle,drone, circleRad);
+                t1.detach();
+                sleep(100);
             }
                 break;
             case 12: {
@@ -752,12 +765,12 @@ processedImage processImage(Mat imgOriginal) {
     cout << "process img" <<endl;
     Mat imgHSV;
     //predefine HSV color range
-    int iLowH = 7;
+    int iLowH = 4;
     int iHighH = 25;
-    int iLowS = 120;
-    int iHighS = 240;
-    int iLowV = 120;
-    int iHighV = 225;
+    int iLowS = 100;
+    int iHighS = 255;
+    int iLowV = 100;
+    int iHighV = 255;
     vector<int> hsvVals = { iLowH, iLowS, iLowV, iHighH, iHighS, iHighV };
     imgHSV = imgOriginal.clone();
     cvtColor(imgHSV, imgHSV, COLOR_BGR2HSV);
@@ -781,11 +794,12 @@ processedImage processImage(Mat imgOriginal) {
     vector<Vec3f> circles;
 
     //Find target
-    HoughCircles(imgHSV, circles, CV_HOUGH_GRADIENT, 1, 10000, 200, 35, 5, 500);
+    HoughCircles(imgHSV, circles, CV_HOUGH_GRADIENT, 1, 10000, 20, 10, 5, 500);
 
     //Draw circles on top of original image
     for (int i = 0; i < circles.size(); i++)
     {
+    	cout << "target found" <<endl;
         targetfound = true;
         Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
         int radius = cvRound(circles[i][2]);
@@ -919,6 +933,8 @@ void flySideways(DJIDrone *drone,int distance, bool direction){
 
 //Fly a circle of a given radius
 void flyCircle(DJIDrone *drone, float circleRadius){
+    //DJIDrone* drone = t_data.drone;
+   // float circleRadius = t_data.radius;
     cout << "fly circle" <<endl;
     float R = 2;
     float V = 2;
@@ -935,7 +951,10 @@ void flyCircle(DJIDrone *drone, float circleRadius){
 
     for(int j = 0; j < 500; j ++)
     {
-        if (circleRadiusIncrements < circleRadius)
+        if(targetfound){
+            break;
+        }
+        else if (circleRadiusIncrements < circleRadius)
         {
             x =  x_center + circleRadiusIncrements;
             y =  y_center;
@@ -953,7 +972,7 @@ void flyCircle(DJIDrone *drone, float circleRadius){
     cout << "x_center: " << x_center <<endl;
     cout << "y_center: " << y_center <<endl;
     int scale = floor(circleRadius/15)+1;
-    int loops = 1890;
+    int loops = 1890*2;
     /* start to draw circle */
     for(int i = 0; i < loops; i++)
     {
@@ -963,7 +982,7 @@ void flyCircle(DJIDrone *drone, float circleRadius){
         x =  x_center + circleRadius*cos((Phi/300));
         y =  y_center + circleRadius*sin((Phi/300));
         cout << "x,y,Phi" << x << " , " << y << " , " << Phi << endl;
-        Phi = Phi+1;
+        Phi = Phi+0.5;
         yaw = Phi/300;
         yaw = (yaw*180)/(M_PI);
         if(yaw > 180){
@@ -976,28 +995,46 @@ void flyCircle(DJIDrone *drone, float circleRadius){
 }
 void goTo(DJIDrone *drone, float posX, float posY){
     cout << "go to" <<endl;
-    int x = cvRound(posX);
-    int y = cvRound(posY);
-    for(int i = 0; i < 200; i ++)
-    {
-        if(i < 180)
-            drone->attitude_control(0x40, 2, 0, 0, 0);
-        else
-            drone->attitude_control(0x40, 0, 0, 0, 0);
+    yaw = 0;
+    float x = drone->local_position.x;
+    float y = drone->local_position.y;
+    float increment = 0.05;
+    while(cvRound(x) != cvRound(posX) || cvRound(y)!=cvRound(posY)) {
+        cout << "x,y " << x << " , " << y << endl;
+        if (cvRound(x) < cvRound(posX)) {
+            x = x + 0.05;
+        } else if (cvRound(x) > cvRound(posX)) {
+            x = x - 0.05;
+        }
+        if (cvRound(y) < cvRound(posY)) {
+            y = y + 0.05;
+        } else if (cvRound(y) > cvRound(posY)) {
+            y = y - 0.05;
+        }
+        drone->local_position_control(x, y, 6.4, yaw);
         usleep(20000);
     }
-    sleep(1);
     /*
-    for(int i = 0;i < 60;i++)
-    {
-        drone->attitude_control( Flight::HorizontalLogic::HORIZONTAL_POSITION |
-                                 Flight::VerticalLogic::VERTICAL_POSITION |
-                                 Flight::YawLogic::YAW_ANGLE |
-                                 Flight::HorizontalCoordinate::HORIZONTAL_BODY |
-                                 Flight::SmoothMode::SMOOTH_DISABLE,
-                                 x, y, 0, 0 );
-        usleep(20000);
-    }
+for(int i = 0; i < 200; i ++)
+{
+    if(i < 180)
+        drone->attitude_control(0x40, 2, 0, 0, 0);
+    else
+        drone->attitude_control(0x40, 0, 0, 0, 0);
+    usleep(20000);
+}
+sleep(1);
+
+for(int i = 0;i < 60;i++)
+{
+    drone->attitude_control( Flight::HorizontalLogic::HORIZONTAL_POSITION |
+                             Flight::VerticalLogic::VERTICAL_POSITION |
+                             Flight::YawLogic::YAW_ANGLE |
+                             Flight::HorizontalCoordinate::HORIZONTAL_BODY |
+                             Flight::SmoothMode::SMOOTH_DISABLE,
+                             x, y, 0, 0 );
+    usleep(20000);
+}
 
 yaw = 0;
 float x = drone->local_position.x;
@@ -1005,33 +1042,30 @@ float y = drone->local_position.y;
 float increment = 0.05;
 while(cvRound(x) != cvRound(posX) || cvRound(y)!=cvRound(posY))
 {
-    cout << "x,y " << x << " , " << y <<endl;
-    if(cvRound(x) < cvRound(posX)) {
-        x = x + 0.05;
-    }
-    else if(cvRound(x) > cvRound(posX)){
-        x = x-0.05;
-    }
-    if(cvRound(y) < cvRound(posY)) {
-        y = y + 0.05;
-    }
-    else if(cvRound(y) > cvRound(posY)){
-        y = y-0.05;
-    }
-    drone->local_position_control(y,x ,6.4, yaw);
-    usleep(20000);
+cout << "x,y " << x << " , " << y <<endl;
+if(cvRound(x) < cvRound(posX)) {
+    x = x + 0.05;
 }
- */
+else if(cvRound(x) > cvRound(posX)){
+    x = x-0.05;
 }
-void landOnTarget(DJIDrone *drone){
+if(cvRound(y) < cvRound(posY)) {
+    y = y + 0.05;
+}
+else if(cvRound(y) > cvRound(posY)){
+    y = y-0.05;
+}
+drone->local_position_control(y,x ,6.4, yaw);
+usleep(20000);
+}
+*/
+}
+/*
+void landOnTarget(DJIDrone *drone, float x, float y){
     cout << "land on target" <<endl;
-    processedImage output;
-    Mat img = captureImage();
-    output = processImage(img);
-    vector <Vec3f> circles = output.circles;
-    float posX = circles[0][0];
-    float posY = circles[0][1];
+    cout << "calling goto" << endl;
     goTo(drone,posX,posY);
     drone->landing();
 
 }
+ */
